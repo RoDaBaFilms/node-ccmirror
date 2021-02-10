@@ -4,6 +4,13 @@ const chokidar = require('chokidar');
 const WebSocket = require('ws');
 const fs = require('fs');
 const {EventEmitter} = require('events');
+const readline = require("readline");
+const chalk = require('chalk');
+
+const rl = readline.createInterface({
+    input: process.stdin,
+    output: process.stdout
+});
 
 (function() {
     if (process.argv.length < 3) {
@@ -12,6 +19,16 @@ const {EventEmitter} = require('events');
     }
 
     const CODE = process.argv[2];
+    var allowInput = true;
+
+    const clog = console.log
+    console.log = function() {
+        if (allowInput) process.stdout.write('\b\b');
+        clog(...arguments);
+        if (allowInput) process.stdout.write('> ');
+    }
+
+    process.stdout.write('> ');
 
     var watcher = chokidar.watch(process.cwd(), {ignored: /^\./, persistent: true, ignoreInitial: true, awaitWriteFinish: true});
     
@@ -48,6 +65,11 @@ const {EventEmitter} = require('events');
                 resolve(socketQueue.shift());
             });
         })
+    }
+
+    function removeQueued(data) {
+        const i = socketQueue.indexOf(data);
+        if (i > -1) socketQueue.splice(i, 1)
     }
     
     function doConnectWebSocket() {
@@ -108,7 +130,7 @@ const {EventEmitter} = require('events');
             if (data.data === 'EVENT:CLIENT_CONNECT' && connection.slaveConnected) return;
 
             socketQueue.push(data.data);
-            socketEmitter.emit('message');
+            socketEmitter.emit('message', data.data);
         }
     
         socket.onerror = (error) => {
@@ -118,7 +140,8 @@ const {EventEmitter} = require('events');
         }
     
         socket.onclose = () => {
-            console.error('[ERROR] WebSocket connection lost');
+            console.error('[FATAL] Error in WebSocket connection, exiting...');
+            process.exit(-1);
         }
     }
     
@@ -214,10 +237,102 @@ const {EventEmitter} = require('events');
 
         for (const update of clonedQueue) {
             await doUpdate(...update);
+            await new Promise((r) => setTimeout(r, 100));
         }
 
         setTimeout(run, 500);
     }
 
     setTimeout(run, 500);
+
+    const stdin = process.openStdin();
+    const buffer = [];
+
+    stdin.addListener('data', async function(d) {
+        if (d[0] != 0x0d) {
+            if (d[0] == 8) {
+                buffer.pop();
+                return;
+            }
+            
+            buffer.push(d[0]);
+            return;
+        }
+
+        const text = Buffer.from(buffer).toString('utf8');
+        buffer.splice(0, buffer.length);
+
+        if (allowInput) process.stdout.write('> ');
+
+        if (text.startsWith('d ')) {
+            if (!connection.connected || !connection.slaveConnected) {
+                console.log(chalk.red('Cannot debug: No (slave) connection!'));
+                return;
+            }
+
+            socket.send(`COMMAND:hasslave`);
+            connection.slaveConnected = await socketRead() === 'YES';
+
+            if (!connection.slaveConnected) {
+                console.log(chalk.red('Cannot debug: No (slave) connection!'));
+                return;
+            }
+
+            const cmdLine = text.split(' ');
+            cmdLine.shift();
+
+            socket.send('DEBUG');
+            socket.send(cmdLine.join(' '));
+
+            const debugMessageHandler = (msg) => {
+                if (msg.startsWith('DEBUG:')) {
+                    removeQueued(msg);
+
+                    const cmd = msg.split(':');
+
+                    switch (cmd[1]) {
+                        case 'STOP':
+                            {
+                                const success = cmd[2] === '1';
+
+                                if (success) {
+                                    console.log(chalk.green('\nDebug stopped'));
+                                } else {
+                                    console.log(chalk.red(`\nDebug failed: Could not resolve ${cmdLine[0]}`));
+                                }
+
+                                socketEmitter.off('message', debugMessageHandler);
+
+                                allowInput = true;
+                                process.stdout.write('> ');
+                            }
+                            break;
+
+                        case 'TEXT':
+                            {
+                                cmd.shift();
+                                cmd.shift();
+
+                                process.stdout.write(cmd.join(':'));
+                            }
+                            break;
+                    }
+                }
+            }
+
+            socketEmitter.on('message', debugMessageHandler);
+
+            allowInput = false;
+            process.stdout.write('\b\b');
+        } else if (text === 'dc') {
+            socket.send('DISCONNECT');
+            socket.close();
+
+            allowInput = false;
+            process.stdout.write('\b\b');
+
+            console.log(chalk.green('Mirror session ended'));
+            process.exit(0);
+        }
+    });
 })();
