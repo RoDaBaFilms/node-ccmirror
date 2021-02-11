@@ -8,8 +8,9 @@ const readline = require("readline");
 const chalk = require('chalk');
 
 const rl = readline.createInterface({
-    input: process.stdin,
-    output: process.stdout
+  input: process.stdin,
+  output: process.stdout,
+  terminal: false
 });
 
 (function() {
@@ -23,7 +24,7 @@ const rl = readline.createInterface({
 
     const clog = console.log
     console.log = function() {
-        if (allowInput) process.stdout.write('\b\b');
+        if (allowInput) process.stdout.write('\b\b  \b\b');
         clog(...arguments);
         if (allowInput) process.stdout.write('> ');
     }
@@ -245,24 +246,10 @@ const rl = readline.createInterface({
 
     setTimeout(run, 500);
 
-    const stdin = process.openStdin();
-    const buffer = [];
-
-    stdin.addListener('data', async function(d) {
-        if (d[0] != 0x0d) {
-            if (d[0] == 8) {
-                buffer.pop();
-                return;
-            }
-            
-            buffer.push(d[0]);
-            return;
-        }
-
-        const text = Buffer.from(buffer).toString('utf8');
-        buffer.splice(0, buffer.length);
-
-        if (allowInput) process.stdout.write('> ');
+    rl.on('line', async function(text) {
+        if (!allowInput) return;
+        
+        process.stdout.write('> ');
 
         if (text.startsWith('d ')) {
             if (!connection.connected || !connection.slaveConnected) {
@@ -298,13 +285,35 @@ const rl = readline.createInterface({
                                 if (success) {
                                     console.log(chalk.green('\nDebug stopped'));
                                 } else {
-                                    console.log(chalk.red(`\nDebug failed: Could not resolve ${cmdLine[0]}`));
+                                    switch(cmd[3]) {
+                                        case 'RESOLVE_FAILED':
+                                            console.log(chalk.red(`\nDebug failed: Could not resolve ${cmdLine[0]}`));
+                                            break;
+
+                                        case 'CLIENT_DC':
+                                            console.log(chalk.red(`\nDebug stopped: Client disconnected`));
+                                            break;
+
+                                        case 'ALREADY_ACTIVE':
+                                            console.log(chalk.red(`\nDebug failed: Already debugging`));
+                                            break;
+                                    }
                                 }
 
                                 socketEmitter.off('message', debugMessageHandler);
 
                                 allowInput = true;
+                                rl.resume();
+
                                 process.stdout.write('> ');
+                            }
+                            break;
+
+                        case 'START':
+                            {
+                                const file = cmd[2];
+
+                                console.log(chalk.green(`Debug started: ${file}`));
                             }
                             break;
 
@@ -323,16 +332,34 @@ const rl = readline.createInterface({
             socketEmitter.on('message', debugMessageHandler);
 
             allowInput = false;
-            process.stdout.write('\b\b');
+            rl.pause();
+            process.stdout.write('\b\b  \b\b');
         } else if (text === 'dc') {
             socket.send('DISCONNECT');
             socket.close();
 
             allowInput = false;
-            process.stdout.write('\b\b');
+            rl.pause();
+            process.stdout.write('\b\b  \b\b');
 
             console.log(chalk.green('Mirror session ended'));
             process.exit(0);
+        }
+    });
+
+    socketEmitter.on('message', (msg) => {
+        if (msg.startsWith('SMESG:')) {
+            removeQueued(msg);
+
+            const cmd = msg.split(':');
+            switch(cmd[1]) {
+                case 'CLIENT_DC': {
+                    if (!allowInput) {
+                        socketEmitter.emit('message', 'DEBUG:STOP:0:CLIENT_DC');
+                    }
+                }
+                break;
+            }
         }
     });
 })();
