@@ -56,6 +56,22 @@ const rl = readline.createInterface({
     const socketQueue = [];
     const socketEmitter = new EventEmitter();
 
+    const waitForCCEventHandler = async () => {
+        if (await socketRead() === 'EVENT:CLIENT_CONNECT') {
+            connection.slaveConnected = true;
+
+            socketEmitter.off('message', waitForCCEventHandler);
+    
+            console.log('CC Computer connected');
+
+            for (const event of replayEvents) {
+                await doUpdate(...event);
+            }
+
+            replayEvents.splice(0, replayEvents.length);
+        }
+    }
+
     async function socketRead() {
         if (socketQueue.length > 0) {
             return socketQueue.shift();
@@ -104,24 +120,8 @@ const rl = readline.createInterface({
             connection.connecting = false;
             connection.connected = true;
 
-            if (!connection.slaveConnected) {
-                const msgEventHandler = async () => {
-                    if (await socketRead() === 'EVENT:CLIENT_CONNECT') {
-                        connection.slaveConnected = true;
-    
-                        socketEmitter.off('message', msgEventHandler);
-                
-                        console.log('CC Computer connected');
-
-                        for (const event of replayEvents) {
-                            await doUpdate(...event);
-                        }
-
-                        replayEvents.splice(0, replayEvents.length);
-                    }
-                }
-    
-                socketEmitter.on('message', msgEventHandler);
+            if (!connection.slaveConnected) {    
+                socketEmitter.on('message', waitForCCEventHandler);
             } else {
                 console.log('CC Computer connected');
             }
@@ -173,23 +173,7 @@ const rl = readline.createInterface({
             console.log(`[HOLD] [${event}] ${path}`);
             replayEvents.push([origPath, event]);
 
-            const msgEventHandler = async () => {
-                if (await socketRead() === 'EVENT:CLIENT_CONNECT') {
-                    connection.slaveConnected = true;
-
-                    socketEmitter.off('message', msgEventHandler);
-            
-                    console.log('CC Computer connected');
-                    
-                    for (const event of replayEvents) {
-                        await doUpdate(...event);
-                    }
-
-                    replayEvents.splice(0, replayEvents.length);
-                }
-            }
-
-            socketEmitter.on('message', msgEventHandler);
+            socketEmitter.on('message', waitForCCEventHandler);
 
             return;
         }
@@ -291,6 +275,7 @@ const rl = readline.createInterface({
                                             break;
 
                                         case 'CLIENT_DC':
+                                            socketEmitter.on('message', waitForCCEventHandler);
                                             console.log(chalk.red(`\nDebug stopped: Client disconnected`));
                                             break;
 
