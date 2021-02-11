@@ -56,8 +56,10 @@ const rl = readline.createInterface({
     const socketQueue = [];
     const socketEmitter = new EventEmitter();
 
-    const waitForCCEventHandler = async () => {
-        if (await socketRead() === 'EVENT:CLIENT_CONNECT') {
+    const waitForCCEventHandler = async (msg) => {
+        if (msg == 'EVENT:CLIENT_CONNECT') {
+            removeQueued(msg);
+
             connection.slaveConnected = true;
 
             socketEmitter.off('message', waitForCCEventHandler);
@@ -65,7 +67,8 @@ const rl = readline.createInterface({
             console.log('CC Computer connected');
 
             for (const event of replayEvents) {
-                await doUpdate(...event);
+                await doUpdate(...[...event, false]);
+                await new Promise((r) => setTimeout(r, 100));
             }
 
             replayEvents.splice(0, replayEvents.length);
@@ -146,11 +149,11 @@ const rl = readline.createInterface({
         }
     }
     
-    async function doUpdate(origPath, event) {
+    async function doUpdate(origPath, event, idkAnymore = true) {
         var path = origPath.substring(process.cwd().length, origPath.length);
 
         if (!connection.connected) {
-            console.log(`[HOLD] [${event}] ${path}`);
+            console.log(`[HOLD] [cock] [${event}] ${path}`);
             replayEvents.push([origPath, event]);
     
             if (!connection.connecting) {
@@ -162,7 +165,7 @@ const rl = readline.createInterface({
 
         if (!connection.slaveConnected) {
             console.log(`[HOLD] [${event}] ${path}`);
-            replayEvents.push([origPath, event]);
+            if (idkAnymore) replayEvents.push([origPath, event]);
             return;
         }
 

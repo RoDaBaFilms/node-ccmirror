@@ -103,8 +103,55 @@ function mainThread()
                     socket.send('DEBUG:START:' .. shell.resolveProgram(program))
         
                     isDebugging = true
+                    
+                    local o_term_write = term.write
+        
+                    local o_tgcp = term.getCursorPos
+                    local o_tscp = term.setCursorPos
+                    local o_tclr = term.clear
+                    local o_tscr = term.scroll
 
-                    os.queueEvent('debug', filename)
+                    term.write = function (text)
+                        socket.send('DEBUG:TEXT:' .. text)
+                    end
+
+                    local lastX, lastY = 0, 0
+
+                    term.getCursorPos = function()
+                        lastX, lastY = o_tgcp()
+                        return lastX, lastY
+                    end
+                    
+                    term.setCursorPos = function(x, y)
+                        if y == lastY + 1 then
+                            socket.send('DEBUG:TEXT:\n')
+                        end
+                    end
+
+                    term.scroll = function(amount)
+                        if amount == 1 then
+                            socket.send('DEBUG:TEXT:\n')
+                        end
+                    end
+
+                    function blank() end
+
+                    term.clear = blank
+
+                    shell.run(filename)
+                    
+                    term.write = o_term_write
+                    term.setCursorPos = o_tscp
+                    term.clear = o_tclr
+                    term.scroll = o_tscr
+
+                    sleep(0.2)
+
+                    socket.send('DEBUG:STOP:1')
+
+                    isDebugging = false
+
+                    print('Debug stopped')
                 end
             end
         elseif resp == 'DISCONNECT' then
@@ -118,59 +165,5 @@ function mainThread()
     end
 end
 
-function debugThread()
-    while true do
-        local _, filename = os.pullEvent('debug')
-
-        local o_term_write = term.write
-        
-        local o_tgcp = term.getCursorPos
-        local o_tscp = term.setCursorPos
-        local o_tclr = term.clear
-        local o_tscr = term.scroll
-
-        term.write = function (text)
-            socket.send('DEBUG:TEXT:' .. text)
-        end
-
-        local lastX, lastY = 0, 0
-
-        term.getCursorPos = function()
-            lastX, lastY = o_tgcp()
-            return lastX, lastY
-        end
-        
-        term.setCursorPos = function(x, y)
-            if y == lastY + 1 then
-                socket.send('DEBUG:TEXT:\n')
-            end
-        end
-
-        term.scroll = function(amount)
-            if amount == 1 then
-                socket.send('DEBUG:TEXT:\n')
-            end
-        end
-
-        function blank() end
-
-        term.clear = blank
-
-        shell.run(filename)
-        
-        term.write = o_term_write
-        term.setCursorPos = o_tscp
-        term.clear = o_tclr
-        term.scroll = o_tscr
-
-        sleep(0.2)
-
-        socket.send('DEBUG:STOP:1')
-
-        isDebugging = false
-
-        print('Debug stopped')
-    end
-end
-
-parallel.waitForAll(mainThread, debugThread)
+mainThread()
+-- parallel.waitForAll(mainThread, debugThread)
