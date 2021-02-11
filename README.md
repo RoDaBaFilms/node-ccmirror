@@ -4,10 +4,7 @@ ComputerCraft Mirror Client
 # Installation on PC
 Installation can be done via the following commands
 ```
-git clone https://github.com/RoDaBaFilms/node-ccmirror.git
-cd node-ccmirror
-npm i
-npm i -g .
+npm i -g node-ccmirror
 ```
 
 # Installation on CC

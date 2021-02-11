@@ -1,21 +1,30 @@
 {
   "name": "node-ccmirror",
   "version": "1.0.0",
-  "description": "",
+  "description": "ComputerCraft Mirror Client",
   "main": "./lib/index.js",
   "scripts": {
     "test": "echo \"Error: no test specified\" && exit 1"
   },
   "keywords": [],
-  "author": "",
+  "author": "RoDaBaFilms",
   "license": "ISC",
   "bin": {
-    "ccmirror": "./bin/index.js"
+    "ccmirror": "bin/index.js"
   },
   "preferGlobal": true,
   "dependencies": {
     "chalk": "^4.1.0",
     "chokidar": "^3.5.1",
     "ws": "^7.4.3"
-  }
+  },
+  "devDependencies": {},
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/RoDaBaFilms/node-ccmirror.git"
+  },
+  "bugs": {
+    "url": "https://github.com/RoDaBaFilms/node-ccmirror/issues"
+  },
+  "homepage": "https://github.com/RoDaBaFilms/node-ccmirror#readme"
 }
